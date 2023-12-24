@@ -1,0 +1,19 @@
+[unix_http_server]
+file=/home/DOCKER_USER/.supervisord/supervisord.sock
+chmod=0700
+
+[supervisord]
+nodaemon=true
+user=DOCKER_USER
+logfile=/home/DOCKER_USER/.supervisord/log/supervisord.log
+pidfile=/home/DOCKER_USER/.supervisord/run/supervisord.pid
+
+
+[program:app]
+command=/usr/bin/php -d variables_order=EGPCS -d memory_limit=2G /home/DOCKER_USER/app/src/index
+user=DOCKER_USER
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+directory=/home/DOCKER_USER/app

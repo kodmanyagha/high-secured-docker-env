@@ -1,0 +1,133 @@
+version: "3.3"
+
+services:
+  app:
+    build:
+      context: ./docker/app
+      dockerfile: Dockerfile
+      args:
+        DOCKER_UID: "${DOCKER_UID}"
+        DOCKER_GID: "${DOCKER_GID}"
+        DOCKER_USER: "${DOCKER_USER}"
+        DOCKER_GROUP: "${DOCKER_GROUP}"
+        MYSQL_DATABASE: "${DB_DATABASE}"
+        MYSQL_USER: "${DB_USERNAME}"
+        MYSQL_PASSWORD: "${DB_PASSWORD}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${FORWARD_APP_PORT_0:-8080}:8080"
+      - "127.0.0.1:${FORWARD_APP_PORT_1:-8081}:8081"
+      - "127.0.0.1:${FORWARD_APP_PORT_2:-8082}:8082"
+    volumes:
+      - "./:/home/${DOCKER_USER}/app"
+    networks:
+      - app
+    restart: always
+    depends_on:
+      - mysql
+      - redis
+      - meilisearch
+
+  mysql:
+    build:
+      context: ./docker/mysql
+      dockerfile: Dockerfile
+      args:
+        DOCKER_UID: "${DOCKER_UID}"
+        DOCKER_GID: "${DOCKER_GID}"
+        DOCKER_USER: "${DOCKER_USER}"
+        DOCKER_GROUP: "${DOCKER_GROUP}"
+        MYSQL_ROOT_PASSWORD: "${DB_PASSWORD}"
+        MYSQL_ROOT_HOST: "%"
+        MYSQL_DATABASE: "${DB_DATABASE}"
+        MYSQL_USER: "${DB_USERNAME}"
+        MYSQL_PASSWORD: "${DB_PASSWORD}"
+        MYSQL_ALLOW_EMPTY_PASSWORD: 1
+    ports:
+      - "127.0.0.1:${FORWARD_DB_PORT:-3306}:3306"
+    volumes:
+      - "./:/home/${DOCKER_USER}/app"
+      - "./docker/volumes/mysql:/home/${DOCKER_USER}/.mysql/data"
+    networks:
+      - app
+    restart: always
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-p${DB_PASSWORD}"]
+      retries: 3
+      timeout: 5s
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+
+  memcached:
+    image: "memcached:alpine"
+    ports:
+      - "127.0.0.1:${FORWARD_MEMCACHED_PORT:-11211}:11211"
+    networks:
+      - app
+    restart: always
+
+  meilisearch:
+    image: "getmeili/meilisearch:v1.2.0"
+    ports:
+      - "127.0.0.1:${FORWARD_MEILISEARCH_PORT:-7700}:7700"
+    volumes:
+      # - 'app-meilisearch:/meili_data'
+      - "./docker/volumes/meilisearch:/meili_data"
+    networks:
+      - app
+    restart: always
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--spider",
+          "http://localhost:7700/health",
+        ]
+      retries: 3
+      timeout: 5s
+
+  redis:
+    image: "redis:alpine"
+    ports:
+      - "127.0.0.1:${FORWARD_REDIS_PORT:-6379}:6379"
+    volumes:
+      - "app-redis:/data"
+    networks:
+      - app
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      retries: 3
+      timeout: 5s
+
+  beanstalkd:
+    build:
+      context: ./docker/beanstalkd
+      dockerfile: Dockerfile
+    volumes:
+      - app-beanstalkd:/usr/local/docker/beanstalkd
+    ports:
+      - "127.0.0.1:${FORWARD_BEANSTALKD_PORT:-11300}:11300"
+    networks:
+      - app
+    restart: always
+
+networks:
+  app:
+    driver: bridge
+    enable_ipv6: false
+
+volumes:
+  app-mysql:
+    driver: local
+  app-redis:
+    driver: local
+  app-meilisearch:
+    driver: local
+  app-beanstalkd:
+    driver: local
